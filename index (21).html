@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ПОРА ПТИЦ</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&display=swap');
+
+        /* КАСТОМНЫЙ ПТИЧИЙ КУРСОР */
+        body, html { 
+            margin: 0; padding: 0; height: 100%; 
+            background: #050505; color: #fff; 
+            font-family: 'Inter', sans-serif; 
+            overflow: hidden; 
+            /* Стандартный курсор - бирюзовая птица */
+            cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="%2300ffcc" stroke="%23050505" stroke-width="2" stroke-linejoin="round"><path d="M2 2 L22 6 L12 12 L6 22 Z"/></svg>') 2 2, auto;
+        }
+
+        /* Курсор при наведении на кликабельные элементы - белая птица */
+        a, button, input[type=range], .leaflet-interactive, .cursor-pointer {
+            cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="%23ffffff" stroke="%2300ffcc" stroke-width="2" stroke-linejoin="round"><path d="M2 2 L22 6 L12 12 L6 22 Z"/></svg>') 2 2, pointer !important;
+        }
+
+        /* Кастомные скроллбары */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0a0f18; }
+        ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #334155; }
+
+        #splash-screen {
+            position: fixed; inset: 0; z-index: 9999;
+            background: radial-gradient(circle at center, #0f172a 0%, #020617 100%);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            transition: opacity 0.8s ease, visibility 0.8s ease;
+            overflow: hidden;
+        }
+        #splash-screen.hidden { opacity: 0; visibility: hidden; }
+
+        .bird-logo {
+            width: 80px; height: 80px; color: #00ffcc;
+            animation: flyFloat 3s ease-in-out infinite;
+            filter: drop-shadow(0 0 20px rgba(0, 255, 204, 0.5));
+            margin-bottom: 2rem;
+        }
+        @keyframes flyFloat {
+            0%, 100% { transform: translateY(0) scale(1); }
+            50% { transform: translateY(-15px) scale(1.05); }
+        }
+
+        .splash-btn {
+            background: transparent; border: 2px solid #00ffcc; color: #00ffcc;
+            padding: 16px 48px; font-size: 2rem; font-weight: 900; border-radius: 60px;
+            letter-spacing: 4px; transition: all 0.3s ease;
+            box-shadow: 0 0 20px rgba(0, 255, 204, 0.2), inset 0 0 10px rgba(0, 255, 204, 0.1);
+        }
+        .splash-btn:hover { background: #00ffcc; color: #020617; transform: scale(1.05); }
+
+        /* Пернатый ползунок времени */
+        input[type=range] {
+            -webkit-appearance: none; background: rgba(255, 255, 255, 0.2);
+            height: 6px; border-radius: 3px; outline: none; transition: 0.3s;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 28px; height: 28px;
+            background-color: #00ffcc; 
+            background-image: url('data:image/svg+xml;utf8,<svg viewBox="0 0 24 24" fill="%230f172a" xmlns="http://www.w3.org/2000/svg"><path d="M22 6L12 13L2 6L4.5 10L12 15L19.5 10L22 6Z"/></svg>');
+            background-position: center; background-repeat: no-repeat; background-size: 16px;
+            border-radius: 50%; box-shadow: 0 0 15px #00ffcc; transition: transform 0.1s;
+        }
+        input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+
+        /* Всплывающее фото птицы ПРИ НАВЕДЕНИИ на карту (исправлена обрезка) */
+        .leaflet-tooltip.photo-tooltip {
+            background: transparent; border: none; box-shadow: none; padding: 0;
+        }
+        .leaflet-tooltip-top:before, .leaflet-tooltip-bottom:before, .leaflet-tooltip-left:before, .leaflet-tooltip-right:before { display: none !important; }
+        .photo-tooltip-inner {
+            width: 64px; height: 64px; border-radius: 50%; overflow: hidden;
+            background: #fff; position: relative; transform: translateY(-5px);
+            display: flex; align-items: center; justify-content: center;
+        }
+        .photo-tooltip-inner img { 
+            width: 90%; height: 90%; object-fit: contain; 
+        }
+    </style>
+</head>
+<body class="flex flex-col md:flex-row h-screen w-screen overflow-hidden bg-[#050505]">
+
+    <div id="splash-screen">
+        <div class="max-w-2xl px-6 text-center flex flex-col items-center z-10">
+            <svg class="bird-logo" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20,60 L50,30 L80,60">
+                    <animate attributeName="d" dur="1.2s" repeatCount="indefinite" values="M20,60 L50,30 L80,60; M20,35 L50,60 L80,35; M20,60 L50,30 L80,60" keyTimes="0; 0.5; 1" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1"/>
+                </path>
+            </svg>
+            <p class="text-xl md:text-2xl text-gray-300 font-light leading-relaxed mb-12">
+                Каждый год миллионы птиц покидают Арктику и отправляются в грандиозное путешествие. Но как далеко они летят?
+            </p>
+            <button id="start-btn" class="splash-btn cursor-pointer">ПОРА ПТИЦ</button>
+        </div>
+    </div>
+
+    <!-- ОБУЧАЮЩИЙ ЭКРАН -->
+    <div id="edu-modal" class="fixed inset-0 z-[8000] bg-black/90 backdrop-blur-md hidden flex flex-col items-center justify-center p-4 transition-opacity duration-500 opacity-0">
+        <div class="max-w-3xl w-full bg-[#0a0f18] border border-teal-500/30 rounded-2xl p-6 md:p-10 shadow-[0_0_50px_rgba(0,255,204,0.1)] overflow-y-auto max-h-[90vh] relative cursor-auto">
+            <button id="close-edu-btn" class="absolute top-4 right-4 w-10 h-10 bg-white/10 hover:bg-white/20 rounded-full text-white flex items-center justify-center text-xl transition-colors hidden cursor-pointer">&times;</button>
+            <h2 class="text-3xl font-black text-teal-400 mb-6 uppercase tracking-wide">Миграция птиц</h2>
+            <div class="space-y-4 text-gray-300 text-sm md:text-base font-light leading-relaxed">
+                <p>В Российской Арктике гнездятся миллионы птиц. Осенью они покидают тундру, расходясь по трем главным пролётным путям: Восточноатлантическому, Центральноазиатскому и Восточноазиатскому.</p>
+                <ul class="list-disc pl-5 space-y-2 text-teal-100/70">
+                    <li>Используйте <b>ползунок времени</b> внизу карты, чтобы следить за стаями.</li>
+                    <li>Кликайте по светящимся стаям на карте, чтобы открыть их <b>карточку вида</b> справа.</li>
+                </ul>
+                <div class="bg-teal-900/20 border border-teal-500/20 p-4 rounded-xl mt-6">
+                    <h4 class="text-teal-300 font-semibold text-sm mb-1 uppercase tracking-wider">Методология и источники</h4>
+                    <p class="text-xs text-gray-400">Проект представляет собой научно-популярную инфографическую модель. Маршруты птиц генерализованы на основе обобщенных пространственных данных <b>BirdLife International</b>, схем пролётных путей Арктического совета и открытых энциклопедических источников.</p>
+                </div>
+            </div>
+            <div class="mt-8 text-center" id="understand-btn-container">
+                <button id="understand-btn" class="bg-teal-500 hover:bg-teal-400 text-gray-900 font-bold text-lg py-4 px-12 rounded-full transition-all hover:scale-105 cursor-pointer">ПОНЯТНО!</button>
+            </div>
+        </div>
+    </div>
+
+    
+    <!-- 1. ЛЕВАЯ ВШИТАЯ ПАНЕЛЬ (Легенда) -->
+    <aside id="sidebar-left" class="absolute top-0 left-0 h-full w-72 md:w-80 bg-[#0a0f18] border-r border-slate-800 flex flex-col z-[2000] transform -translate-x-full md:relative md:translate-x-0 transition-transform duration-300">
+        <div class="p-5 border-b border-slate-800 flex justify-between items-center bg-[#0d131f]">
+            <h1 class="text-xl font-black text-teal-400 uppercase tracking-widest">ПОРА ПТИЦ</h1>
+            <button id="about-btn" class="w-8 h-8 rounded-full border border-teal-500/30 text-teal-400 flex items-center justify-center font-bold hover:bg-teal-500 hover:text-black transition cursor-pointer" title="О проекте">?</button>
+            <button class="md:hidden text-gray-400 text-2xl px-2 cursor-pointer" onclick="toggleMobileLeft()">&times;</button>
+        </div>
+        <div class="p-5 flex-1 overflow-y-auto">
+            <p class="text-xs text-gray-400 mb-6 uppercase tracking-wider">Пролётные коридоры</p>
+            <div id="legend-container" class="space-y-4"></div>
+        </div>
+    </aside>
+
+    <!-- 2. ЦЕНТРАЛЬНАЯ ЧАСТЬ (Карта + Таймлайн) -->
+    <main class="flex-1 relative flex flex-col min-h-0 bg-slate-900">
+        
+        <!-- Мобильные кнопки -->
+        <div class="md:hidden absolute top-4 left-4 z-[1000]">
+            <button onclick="toggleMobileLeft()" class="bg-[#0a0f18]/90 backdrop-blur text-teal-400 font-bold px-4 py-2 rounded-xl border border-slate-700 shadow-lg uppercase text-xs tracking-wider cursor-pointer">Легенда</button>
+        </div>
+        <div class="md:hidden absolute top-4 right-4 z-[1000]">
+            <button onclick="toggleMobileRight()" class="bg-[#0a0f18]/90 backdrop-blur text-teal-400 font-bold px-4 py-2 rounded-xl border border-slate-700 shadow-lg uppercase text-xs tracking-wider cursor-pointer">Карточка</button>
+        </div>
+
+        <!-- Карта -->
+        <div id="map" class="absolute inset-0 z-0 cursor-auto"></div>
+
+        <!-- Ползунок -->
+        <div class="absolute bottom-6 left-1/2 -translate-x-1/2 w-[90%] md:w-[450px] z-[1000] bg-[#0a0f18]/80 backdrop-blur-xl p-4 rounded-2xl border border-white/10 shadow-[0_10px_40px_rgba(0,0,0,0.5)]" id="ui-timeline" style="display:none;">
+            <div class="flex justify-between text-[10px] md:text-xs text-gray-400 font-bold mb-3 px-1 uppercase" id="month-labels">
+                <span>Авг</span><span>Сен</span><span>Окт</span><span>Ноя</span><span>Дек</span><span>Янв</span><span>Фев</span><span>Мар</span><span>Апр</span><span>Май</span><span>Июн</span><span>Июл</span>
+            </div>
+            <input type="range" id="time-slider" min="0" max="11.99" step="0.05" value="0" class="w-full mb-1 cursor-pointer">
+            <div class="text-center mt-2 text-teal-400 font-black tracking-[0.2em] uppercase text-sm md:text-base" id="current-month-display">Август</div>
+        </div>
+    </main>
+
+    <!-- 3. ПРАВАЯ ВШИТАЯ ПАНЕЛЬ (Карточка птицы) -->
+    <aside id="sidebar-right" class="absolute top-0 right-0 h-full w-80 md:w-[340px] bg-[#0a0f18] border-l border-slate-800 flex flex-col z-[2000] transform translate-x-full md:relative md:translate-x-0 transition-transform duration-300">
+        
+        <div class="md:hidden p-3 border-b border-slate-800 flex justify-end bg-[#0d131f]">
+            <button class="text-gray-400 text-2xl px-2 cursor-pointer" onclick="toggleMobileRight()">&times;</button>
+        </div>
+
+        <div class="relative h-56 md:h-64 bg-slate-800 flex-shrink-0 flex justify-center items-center border-b border-slate-700 bg-white">
+            <img id="panel-img" src="" class="max-w-full max-h-full object-contain p-4">
+            
+            <button id="prev-btn" class="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 bg-black/60 text-white rounded-full flex items-center justify-center hover:bg-teal-500 hover:text-black transition text-xl font-bold backdrop-blur-sm border border-white/20 cursor-pointer">&lsaquo;</button>
+            <button id="next-btn" class="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 bg-black/60 text-white rounded-full flex items-center justify-center hover:bg-teal-500 hover:text-black transition text-xl font-bold backdrop-blur-sm border border-white/20 cursor-pointer">&rsaquo;</button>
+        </div>
+
+        <div class="p-6 flex-1 overflow-y-auto">
+            <div class="flex items-center gap-3 mb-4">
+                <div id="panel-color-dot" class="w-4 h-4 rounded-full shadow-[0_0_10px_currentColor]"></div>
+                <h2 id="panel-title" class="text-2xl font-black text-white leading-tight">Загрузка...</h2>
+            </div>
+            <p id="panel-desc" class="text-sm text-gray-300 leading-relaxed font-light">Выберите птицу на карте или воспользуйтесь стрелочками для навигации.</p>
+        </div>
+    </aside>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        const map = L.map('map', { center: [55.0, 90.0], zoom: 3, zoomControl: false });
+        L.control.zoom({ position: 'topright' }).addTo(map);
+        map.attributionControl.setPrefix(''); 
+
+        const apiKey = "cb1_3zxa_1_02fb4a160c27f9bf41d34877"; 
+        L.tileLayer(`https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png?key=${apiKey}`, { maxZoom: 19 }).addTo(map);
+
+        const monthOrder = [8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7];
+        const monthNames = ["Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль"];
+
+        const migrationData = {
+            "Восточноатлантический": [
+                {
+                    name: "Черная казарка", color: "#00ffcc",
+                    desc: "Гнездится на арктическом побережье и островах. Во время зимовок в Европе критически зависит от морской травы (зостеры), поэтому маршрут миграции строго привязан к морским мелководьям и лиманам.",
+                    img: "https://i.postimg.cc/QCqjy8wh/Gemini-Generated-Image.jpg",
+                    track: { 8: [73.5, 82.0], 9: [68.0, 45.0], 10: [55.0, 10.0], 11: [53.0, 5.0], 12: [51.5, 0.5], 1: [51.0, 0.0], 2: [52.0, 2.0], 3: [55.0, 8.0], 4: [62.0, 20.0], 5: [68.0, 40.0], 6: [72.0, 75.0], 7: [73.5, 82.0] }
+                },
+                {
+                    name: "Полярная крачка", color: "#3b82f6",
+                    desc: "Абсолютный мировой рекордсмен по дальности перелетов. Гнездится в Арктике, а зимует во льдах Антарктики. За год птица преодолевает до 90 000 километров, проводя в воздухе большую часть жизни и заставая два полярных лета.",
+                    img: "https://i.postimg.cc/x1MzTHwM/polar-krachka.jpg",
+                    track: { 8: [75.0, 90.0], 9: [40.0, -10.0], 10: [0.0, -20.0], 11: [-40.0, -10.0], 12: [-70.0, -40.0], 1: [-75.0, -20.0], 2: [-60.0, 10.0], 3: [-20.0, 15.0], 4: [20.0, -10.0], 5: [50.0, -5.0], 6: [70.0, 60.0], 7: [75.0, 90.0] }
+                },
+                {
+                    name: "Тулес", color: "#a855f7",
+                    desc: "Крупный северный кулик. Уникален тем, что не образует плотных стай на зимовках: каждая птица занимает свой индивидуальный кормовой участок на илистых пляжах и агрессивно защищает его от сородичей.",
+                    img: "https://i.postimg.cc/3xmvJpsN/other.jpg",
+                    track: { 8: [71.0, 70.0], 9: [65.0, 45.0], 10: [55.0, 15.0], 11: [45.0, 0.0], 12: [35.0, -10.0], 1: [32.0, -10.0], 2: [40.0, 0.0], 3: [50.0, 10.0], 4: [60.0, 30.0], 5: [68.0, 50.0], 6: [72.0, 65.0], 7: [71.0, 70.0] }
+                }
+            ],
+            "Центральноазиатский": [
+                {
+                    name: "Краснозобая казарка", color: "#ffffff",
+                    desc: "Редчайший эндемик России. Чтобы защитить кладку от песцов, эти птицы намеренно строят свои гнезда вплотную к гнездам хищников — сапсанов или полярных сов, которые отгоняют наземных врагов от своей территории.",
+                    img: "https://i.postimg.cc/SK4zXR42/redzob-kazarka.jpg",
+                    track: { 8: [73.0, 80.0], 9: [66.0, 70.0], 10: [50.0, 50.0], 11: [46.0, 35.0], 12: [44.0, 28.0], 1: [43.5, 28.5], 2: [45.0, 30.0], 3: [50.0, 40.0], 4: [58.0, 55.0], 5: [67.0, 70.0], 6: [72.0, 78.0], 7: [73.0, 80.0] }
+                },
+                {
+                    name: "Белолобый гусь", color: "#66ff66",
+                    desc: "Один из самых массовых видов гусей в Арктике. Совершает длительные беспосадочные перелеты на высоте до нескольких километров. Во время полета стая постоянно перекликается, что помогает молодым птицам не сбиться с пути.",
+                    img: "https://i.postimg.cc/N0tryFtx/whitehead-goose.jpg",
+                    track: { 8: [70.0, 75.0], 9: [60.0, 60.0], 10: [50.0, 45.0], 11: [45.0, 35.0], 12: [40.0, 30.0], 1: [38.0, 28.0], 2: [42.0, 32.0], 3: [50.0, 45.0], 4: [60.0, 55.0], 5: [68.0, 65.0], 6: [72.0, 75.0], 7: [70.0, 75.0] }
+                }
+            ],
+            "Восточноазиатский": [
+                {
+                    name: "Стерх", color: "#ef4444",
+                    desc: "Белый журавль, гнездящийся исключительно на севере России. Находится под угрозой исчезновения. Птенцы вылупляются с рыжим пухом для маскировки в тундре и приобретают белоснежное оперение только к третьему году жизни.",
+                    img: "https://i.postimg.cc/q7rCtqry/sterh.jpg",
+                    track: { 8: [70.0, 145.0], 9: [55.0, 135.0], 10: [40.0, 125.0], 11: [32.0, 120.0], 12: [29.0, 116.0], 1: [28.0, 116.0], 2: [30.0, 118.0], 3: [40.0, 122.0], 4: [50.0, 128.0], 5: [60.0, 135.0], 6: [70.0, 142.0], 7: [70.0, 145.0] }
+                },
+                {
+                    name: "Кулик-лопатень", color: "#f97316",
+                    desc: "Вид на грани полного исчезновения, в мире осталось не более 200 пар. Гнездится только на Чукотке. Обладает уникальным клювом в форме лопаточки, которым процеживает ил в поисках мелких беспозвоночных.",
+                    img: "https://i.postimg.cc/HkXys5qp/lopaten.jpg",
+                    track: { 8: [65.0, 175.0], 9: [55.0, 155.0], 10: [35.0, 120.0], 11: [20.0, 110.0], 12: [10.0, 105.0], 1: [8.0, 103.0], 2: [12.0, 108.0], 3: [25.0, 115.0], 4: [40.0, 125.0], 5: [55.0, 145.0], 6: [62.0, 165.0], 7: [65.0, 175.0] }
+                },
+                {
+                    name: "Песчанка", color: "#eab308",
+                    desc: "Мелкий кулик, гнездящийся в высокоширотной Арктике. На зимовках в тропиках легко узнаваем по характерной манере кормления: стайки быстро бегают взад-вперед за отступающими океанскими волнами.",
+                    img: "https://i.postimg.cc/HW5xDHX9/peschanka.jpg",
+                    track: { 8: [75.0, 140.0], 9: [60.0, 130.0], 10: [30.0, 120.0], 11: [0.0, 110.0], 12: [-25.0, 120.0], 1: [-28.0, 122.0], 2: [-10.0, 115.0], 3: [15.0, 120.0], 4: [40.0, 130.0], 5: [60.0, 135.0], 6: [75.0, 140.0], 7: [75.0, 140.0] }
+                }
+            ]
+        };
+
+        const activeMarkers = {};
+        let flatBirdsList = [];
+        let currentBirdIndex = 0; 
+        const legendContainer = document.getElementById('legend-container');
+        
+        Object.entries(migrationData).forEach(([corridor, birds]) => {
+            let html = `<div class="border-t border-slate-700/50 pt-4 mb-4">
+                            <h3 class="text-[10px] text-slate-500 uppercase tracking-widest mb-3 font-bold">${corridor}</h3>
+                            <div class="space-y-3">`;
+            
+            birds.forEach(bird => {
+                flatBirdsList.push(bird);
+                
+                html += `
+                    <div class="flex items-center gap-3 group cursor-pointer" onclick="openBirdCard('${bird.name}')">
+                        <div class="w-8 h-8 rounded-full bg-white flex items-center justify-center border-2 border-slate-700 transition-all group-hover:scale-110 overflow-hidden" 
+                             style="border-color: ${bird.color}; box-shadow: 0 0 10px ${bird.color}">
+                             <img src="${bird.img}" class="w-[90%] h-[90%] object-contain">
+                        </div>
+                        <span class="flex-1 text-sm text-slate-300 group-hover:text-white transition-colors">${bird.name}</span>
+                    </div>`;
+                
+                const latLngs = monthOrder.map(m => bird.track[m]);
+                latLngs.push(bird.track[monthOrder[0]]);
+                
+                L.polyline(latLngs, { color: bird.color, weight: 2, opacity: 0.15, lineJoin: 'round', dashArray: '4 8' }).addTo(map);
+
+                const startPos = bird.track[8];
+                const marker = L.circleMarker(startPos, {
+                    radius: 7, fillColor: bird.color, color: '#fff', 
+                    weight: 1.5, opacity: 1, fillOpacity: 0.9, className: 'glow-marker cursor-pointer'
+                })
+                .bindTooltip(`
+                    <div class="photo-tooltip-inner" style="border: 2px solid ${bird.color}; box-shadow: 0 0 15px ${bird.color}">
+                        <img src="${bird.img}" alt="${bird.name}">
+                    </div>
+                `, { direction: 'top', className: 'photo-tooltip', offset: [0, -10] })
+                .on('click', () => {
+                    openBirdCard(bird.name);
+                    toggleMobileRight(true); 
+                })
+                .addTo(map);
+                
+                activeMarkers[bird.name] = { marker: marker, data: bird };
+            });
+            html += `</div></div>`;
+            legendContainer.innerHTML += html;
+        });
+
+        function updatePositions(progressValue) {
+            let startIndex = Math.floor(progressValue);
+            let endIndex = (startIndex + 1) % 12;
+            let t = progressValue - startIndex;
+            let startMonth = monthOrder[startIndex];
+            let endMonth = monthOrder[endIndex];
+
+            document.getElementById('current-month-display').innerText = monthNames[Math.round(progressValue) % 12];
+
+            Object.values(activeMarkers).forEach(item => {
+                const bird = item.data;
+                const lat = bird.track[startMonth][0] + (bird.track[endMonth][0] - bird.track[startMonth][0]) * t;
+                const lng = bird.track[startMonth][1] + (bird.track[endMonth][1] - bird.track[startMonth][1]) * t;
+                item.marker.setLatLng([lat, lng]);
+            });
+        }
+
+        document.getElementById('time-slider').addEventListener('input', (e) => updatePositions(parseFloat(e.target.value)));
+
+        document.getElementById('start-btn').addEventListener('click', () => {
+            const splash = document.getElementById('splash-screen');
+            splash.classList.add('opacity-0');
+            setTimeout(() => { 
+                splash.classList.add('hidden');
+                const eduModal = document.getElementById('edu-modal');
+                eduModal.classList.remove('hidden');
+                requestAnimationFrame(() => eduModal.classList.remove('opacity-0'));
+            }, 800); 
+        });
+
+        function closeEduModal() {
+            const eduModal = document.getElementById('edu-modal');
+            eduModal.classList.add('opacity-0');
+            setTimeout(() => {
+                eduModal.classList.add('hidden');
+                map.invalidateSize(); 
+                document.getElementById('ui-timeline').style.display = 'block';
+                document.getElementById('close-edu-btn').classList.remove('hidden');
+                document.getElementById('understand-btn-container').style.display = 'none';
+                
+                if (flatBirdsList.length > 0) {
+                    currentBirdIndex = 0;
+                    renderCurrentBird();
+                }
+            }, 500);
+        }
+
+        document.getElementById('understand-btn').addEventListener('click', closeEduModal);
+        document.getElementById('close-edu-btn').addEventListener('click', closeEduModal);
+        
+        document.getElementById('about-btn').addEventListener('click', () => {
+            const eduModal = document.getElementById('edu-modal');
+            eduModal.classList.remove('hidden');
+            requestAnimationFrame(() => eduModal.classList.remove('opacity-0'));
+        });
+
+        function renderCurrentBird() {
+            const bird = flatBirdsList[currentBirdIndex];
+            document.getElementById('panel-title').innerText = bird.name;
+            document.getElementById('panel-title').style.color = bird.color;
+            document.getElementById('panel-color-dot').style.backgroundColor = bird.color;
+            document.getElementById('panel-color-dot').style.color = bird.color; 
+            document.getElementById('panel-desc').innerText = bird.desc;
+            document.getElementById('panel-img').src = bird.img;
+        }
+
+        window.openBirdCard = function(birdName) {
+            const index = flatBirdsList.findIndex(b => b.name === birdName);
+            if(index !== -1) {
+                currentBirdIndex = index;
+                renderCurrentBird();
+            }
+        };
+
+        document.getElementById('prev-btn').addEventListener('click', () => {
+            currentBirdIndex = (currentBirdIndex - 1 + flatBirdsList.length) % flatBirdsList.length;
+            renderCurrentBird();
+        });
+
+        document.getElementById('next-btn').addEventListener('click', () => {
+            currentBirdIndex = (currentBirdIndex + 1) % flatBirdsList.length;
+            renderCurrentBird();
+        });
+
+        const leftSidebar = document.getElementById('sidebar-left');
+        const rightSidebar = document.getElementById('sidebar-right');
+        
+        window.toggleMobileLeft = function() {
+            leftSidebar.classList.toggle('-translate-x-full');
+            if (!leftSidebar.classList.contains('-translate-x-full')) {
+                rightSidebar.classList.add('translate-x-full');
+            }
+        };
+        
+        window.toggleMobileRight = function(forceOpen = false) {
+            if (forceOpen) {
+                rightSidebar.classList.remove('translate-x-full');
+            } else {
+                rightSidebar.classList.toggle('translate-x-full');
+            }
+            if (!rightSidebar.classList.contains('translate-x-full')) {
+                leftSidebar.classList.add('-translate-x-full');
+            }
+        };
+
+        flatBirdsList.forEach(bird => {
+            if (bird.img) { const img = new Image(); img.src = bird.img; }
+        });
+
+        window.addEventListener('resize', () => { map.invalidateSize(); });
+
+    </script>
+</body>
+</html>
